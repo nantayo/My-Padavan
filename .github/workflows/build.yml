@@ -1,0 +1,53 @@
+name: Build Padavan-4.4 for R2100
+
+on:
+  workflow_dispatch:
+
+env:
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  REPO_URL: https://github.com/MeIsReallyBa/padavan-4.4
+  REPO_BRANCH: main
+  TZ: Asia/Shanghai
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        device: [AP-5.2, Router-4.1]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@main
+
+      - name: Initialize environment
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt-get -qq update
+          sudo apt-get -qq install -y $(curl -fsSL https://raw.githubusercontent.com/nantayo/My-Pkg/master/padavan)
+          sudo apt-get -qq clean
+          sudo timedatectl set-timezone "$TZ"
+
+      - name: Clone &Adjust source code
+        run: |
+          git clone $REPO_URL -b $REPO_BRANCH --single-branch --depth=1 /opt/padavan
+          mkdir -p /opt/images
+          cp -rf trunk /opt/padavan/
+          cp -rf ${{ matrix.device }}/trunk /opt/padavan/
+          echo "FILE_DATE=$(date +'%Y%m%d')" >> $GITHUB_ENV
+          cd /opt/padavan/toolchain-mipsel
+          sh dl_toolchain.sh
+
+      - name: Compile firmware
+        run: |
+          cd /opt/padavan/trunk
+          cp configs/templates/R2100.config .config
+          sudo ./clear_tree
+          sudo ./build_firmware_modify R2100
+          sudo mv images/*.trx /opt/images/${{ matrix.device }}.trx
+
+      - name: Upload AP firmware
+        uses: softprops/action-gh-release@master
+        with:
+          tag_name: Padavan-4.4_${{ env.FILE_DATE }}
+          files: /opt/images/*.trx
